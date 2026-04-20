@@ -1,0 +1,9 @@
+{
+  "name": "Garmeta WMS",
+  "description": "High-performance Garment Warehouse Management System with real-time SKU variation tracking and automated stock ledger.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ],
+  "majorCapabilities": []
+}

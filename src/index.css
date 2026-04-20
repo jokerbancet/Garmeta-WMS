@@ -1,0 +1,47 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+
+  --color-primary-text: #0f172a; /* Slate 900 */
+  --color-brand: #4f46e5;       /* Indigo 600 */
+  --color-brand-hover: #4338ca; /* Indigo 700 */
+  --color-surface-bg: #f8fafc;  /* Slate 50 */
+  --color-surface: #ffffff;     /* White */
+
+  --color-status-success: #10b981; /* Green 500 */
+  --color-status-error: #ef4444;   /* Red 500 */
+  --color-status-warning: #f59e0b; /* Yellow 500 */
+
+  --radius-card: 16px;
+  --radius-button: 8px;
+  
+  --shadow-soft: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  --shadow-card: 0 10px 15px -3px rgb(0 0 0 / 0.05), 0 4px 6px -4px rgb(0 0 0 / 0.05);
+}
+
+@layer base {
+  body {
+    @apply bg-surface-bg text-primary-text antialiased selection:bg-brand/10 selection:text-brand;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-sans font-semibold tracking-tight;
+  }
+}
+
+/* Custom Utilities for WMS Data Tables */
+@layer components {
+  .wms-card {
+    @apply bg-surface rounded-card shadow-card border border-slate-200/60 overflow-hidden;
+  }
+
+  .wms-input {
+    @apply block w-full rounded-button border border-slate-200 bg-surface px-4 py-2.5 text-sm ring-brand transition-all focus:border-brand focus:outline-none focus:ring-2;
+  }
+
+  .wms-btn-primary {
+    @apply flex items-center justify-center gap-2 rounded-button bg-brand px-6 py-2.5 text-sm font-semibold text-white shadow-sm transition-all hover:bg-brand-hover active:scale-95;
+  }
+}
