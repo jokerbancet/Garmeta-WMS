@@ -1,6 +1,6 @@
 // src/types/inventory.ts
 
-export type TransactionType = 'In' | 'Out' | 'Transfer' | 'Opname';
+export type TransactionType = 'In' | 'Out' | 'Transfer' | 'Opname' | 'Opname_Adjustment';
 
 export interface Product {
   id: string;

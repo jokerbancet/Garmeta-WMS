@@ -1,62 +1,54 @@
-// src/pages/StockOpname.tsx
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   RefreshCcw, 
-  Search, 
-  MapPin, 
-  Package, 
-  CheckCircle2, 
-  AlertCircle,
-  History,
-  Scale,
-  ArrowRightLeft
+  Plus,
+  Warehouse,
+  ChevronRight,
+  ClipboardList,
+  Fingerprint,
+  Package,
+  CheckCircle2,
+  AlertCircle
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { 
-  processStockOpname, 
-  fetchFullInventory,
-  fetchRecentTransactions 
-} from '@/services/inventoryService';
-import { InventoryWithDetails } from '@/types/inventory';
-
-const SuccessFeedback = ({ onReset }: { onReset: () => void }) => (
-  <motion.div 
-    initial={{ opacity: 0, scale: 0.9 }}
-    animate={{ opacity: 1, scale: 1 }}
-    className="flex flex-col items-center justify-center py-12 text-center"
-  >
-    <div className="mb-4 rounded-full bg-amber-100 p-4 text-amber-600">
-      <CheckCircle2 size={48} />
-    </div>
-    <h2 className="text-xl font-bold text-slate-900">Opname Berhasil</h2>
-    <p className="mt-2 text-sm text-slate-500">Data persediaan telah disinkronkan dengan stok fisik.</p>
-    <button 
-      onClick={onReset}
-      className="mt-8 wms-btn-primary bg-amber-600 hover:bg-amber-700"
-    >
-      Lanjut Opname
-    </button>
-  </motion.div>
-);
+  createOpnameTicket,
+  fetchActiveOpnameTickets,
+  fetchOpnameItems,
+  submitPhysicalCount,
+  OpnameTicket,
+  OpnameItem
+} from '@/services/opnameService';
+import { fetchWarehouses, Warehouse as WarehouseType } from '@/services/warehouseService';
+import { fetchLocations, LocationRecord } from '@/services/locationService';
+import { fetchCategories } from '@/services/inventoryService';
+import { Category } from '@/types/category';
 
 export default function StockOpname() {
-  const [isSuccess, setIsSuccess] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [tickets, setTickets] = useState<OpnameTicket[]>([]);
+  const [selectedTicket, setSelectedTicket] = useState<OpnameTicket | null>(null);
+  const [items, setItems] = useState<OpnameItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
-  const [inventory, setInventory] = useState<InventoryWithDetails[]>([]);
-  const [recentLogs, setRecentLogs] = useState<any[]>([]);
+  // Initiation state
+  const [showInitiate, setShowInitiate] = useState(false);
+  const [warehouses, setWarehouses] = useState<WarehouseType[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [availableLocations, setAvailableLocations] = useState<LocationRecord[]>([]);
+  const [initPayload, setInitPayload] = useState({
+    warehouseId: '',
+    aisle: '',
+    rack: '',
+    level: '',
+    categoryId: ''
+  });
 
-  // Selection state
-  const [selectedInventory, setSelectedInventory] = useState<InventoryWithDetails | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [showInventorySearch, setShowInventorySearch] = useState(false);
-
-  // Form state
-  const [physicalQuantity, setPhysicalQuantity] = useState<number | ''>('');
-  const [note, setNote] = useState('');
+  // Counting state
+  const [itemCounts, setItemCounts] = useState<Record<string, number>>({});
+  const [processingItemId, setProcessingItemId] = useState<string | null>(null);
 
   useEffect(() => {
     loadInitialData();
@@ -65,31 +57,27 @@ export default function StockOpname() {
   const loadInitialData = async () => {
     try {
       setLoading(true);
-      const [invData, logData] = await Promise.all([
-        fetchFullInventory(),
-        fetchRecentTransactions(5)
+      const [ticketData, whData, catData, locData] = await Promise.all([
+        fetchActiveOpnameTickets(),
+        fetchWarehouses(),
+        fetchCategories(),
+        fetchLocations()
       ]);
-      setInventory(invData);
-      setRecentLogs(logData);
+      setTickets(ticketData);
+      setWarehouses(whData);
+      setCategories(catData);
+      setAvailableLocations(locData);
     } catch (e) {
-      console.error('Failed to load data:', e);
+      console.error('Failed to load initial data:', e);
     } finally {
       setLoading(false);
     }
   };
 
-  const filteredInventory = useMemo(() => {
-    if (!searchQuery) return [];
-    return inventory.filter(item => 
-      item.product_variants.sku.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item.product_variants.products.name.toLowerCase().includes(searchQuery.toLowerCase())
-    ).slice(0, 5);
-  }, [inventory, searchQuery]);
-
-  const handleOpname = async (e: React.FormEvent) => {
+  const handleInitiate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedInventory || physicalQuantity === '') {
-      setError('Harap lengkapi semua data opname.');
+    if (!initPayload.warehouseId) {
+      setError('Harap pilih gudang.');
       return;
     }
 
@@ -97,259 +85,296 @@ export default function StockOpname() {
     setError(null);
 
     try {
-      await processStockOpname({
-        inventory_id: selectedInventory.id,
-        physical_quantity: physicalQuantity,
-        note
-      });
-      setIsSuccess(true);
-      loadInitialData();
-      // Reset form
-      setSelectedInventory(null);
-      setSearchQuery('');
-      setPhysicalQuantity('');
-      setNote('');
+      await createOpnameTicket(initPayload);
+      setShowInitiate(false);
+      await loadInitialData();
     } catch (e: any) {
-      setError(e.message || 'Gagal memproses opname.');
+      setError(e.message || 'Gagal membuat tiket opname.');
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  if (isSuccess) return <SuccessFeedback onReset={() => setIsSuccess(false)} />;
+  const startCounting = async (ticket: OpnameTicket) => {
+    try {
+      setLoading(true);
+      const itemData = await fetchOpnameItems(ticket.id);
+      setItems(itemData);
+      setSelectedTicket(ticket);
+      // Initialize counts
+      const counts: Record<string, number> = {};
+      itemData.forEach(item => {
+        if (item.physical_quantity !== null) counts[item.id] = item.physical_quantity;
+      });
+      setItemCounts(counts);
+    } catch (e) {
+      console.error('Failed to load items:', e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSubmitCount = async (itemId: string) => {
+    const count = itemCounts[itemId];
+    if (count === undefined || isNaN(count)) return;
+
+    try {
+      setProcessingItemId(itemId);
+      await submitPhysicalCount(itemId, count);
+      // Update local state status
+      setItems(items.map(i => i.id === itemId ? { ...i, status: 'counted', physical_quantity: count } : i));
+    } catch (e) {
+      console.error('Failed to submit count:', e);
+    } finally {
+      setProcessingItemId(null);
+    }
+  };
+
+  // Filters for dropdowns
+  const uniqueAisles = useMemo(() => 
+    Array.from(new Set(availableLocations.filter(l => l.warehouse_id === initPayload.warehouseId).map(l => l.aisle))).sort()
+  , [availableLocations, initPayload.warehouseId]);
+
+  const filteredRacks = useMemo(() => 
+    Array.from(new Set(availableLocations.filter(l => l.warehouse_id === initPayload.warehouseId && l.aisle === initPayload.aisle).map(l => l.rack))).sort()
+  , [availableLocations, initPayload.warehouseId, initPayload.aisle]);
+
+  const filteredLevels = useMemo(() => 
+    Array.from(new Set(availableLocations.filter(l => l.warehouse_id === initPayload.warehouseId && l.aisle === initPayload.aisle && l.rack === initPayload.rack).map(l => l.level))).sort()
+  , [availableLocations, initPayload.warehouseId, initPayload.aisle, initPayload.rack]);
+
+  if (loading && !selectedTicket && !showInitiate) {
+    return (
+      <div className="flex h-64 items-center justify-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-amber-600 border-t-transparent" />
+      </div>
+    );
+  }
 
   return (
-    <div className="mx-auto max-w-4xl space-y-8">
-      <div className="flex items-center gap-4">
-        <div className="rounded-xl bg-amber-50 p-3 text-amber-600">
-          <RefreshCcw size={28} />
-        </div>
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">Stock Opname</h1>
-          <p className="text-sm text-slate-500">Cocokkan jumlah fisik dengan data di sistem (Cycle Counting).</p>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 gap-8 lg:grid-cols-5">
-        <div className="lg:col-span-3 space-y-6">
-          {error && (
-            <motion.div 
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="flex items-center gap-3 rounded-xl bg-rose-50 p-4 text-rose-600 border border-rose-100"
+    <div className="mx-auto max-w-5xl space-y-8">
+      {!selectedTicket && !showInitiate ? (
+        <>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="rounded-xl bg-amber-50 p-3 text-amber-600">
+                <RefreshCcw size={28} />
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold text-slate-900">Stock Opname</h1>
+                <p className="text-sm text-slate-500">Kelola kegiatan penghitungan fisik stok.</p>
+              </div>
+            </div>
+            <button 
+              onClick={() => setShowInitiate(true)}
+              className="wms-btn-primary bg-amber-600 hover:bg-amber-700"
             >
-              <AlertCircle size={20} className="shrink-0" />
-              <p className="text-sm font-medium">{error}</p>
-            </motion.div>
-          )}
+              <Plus size={18} />
+              Buat Tiket Baru
+            </button>
+          </div>
 
-          <div className="wms-card p-6 space-y-4">
-            <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400">1. Cari Barang yang di-Cek</h3>
-            
-            {!selectedInventory ? (
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                <input 
-                  type="text" 
-                  value={searchQuery}
-                  onChange={(e) => {
-                    setSearchQuery(e.target.value);
-                    setShowInventorySearch(true);
-                  }}
-                  onFocus={() => setShowInventorySearch(true)}
-                  placeholder="Cari SKU atau Lokasi Rak..."
-                  className="wms-input pl-10 h-10"
-                />
-                
-                <AnimatePresence>
-                  {showInventorySearch && filteredInventory.length > 0 && (
-                    <>
-                      <div className="fixed inset-0 z-10" onClick={() => setShowInventorySearch(false)} />
-                      <motion.div 
-                        initial={{ opacity: 0, y: 5 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: 5 }}
-                        className="absolute z-20 top-full left-0 right-0 mt-1 max-h-60 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl py-2"
-                      >
-                        {filteredInventory.map((item) => (
-                          <button
-                            key={item.id}
-                            type="button"
-                            onClick={() => {
-                              setSelectedInventory(item);
-                              setShowInventorySearch(false);
-                              setPhysicalQuantity(item.quantity);
-                            }}
-                            className="w-full px-4 py-3 hover:bg-slate-50 text-left transition-colors border-b border-slate-50 last:border-0"
-                          >
-                            <div className="flex justify-between items-start">
-                              <div>
-                                <p className="text-sm font-bold text-slate-900">{item.product_variants.sku}</p>
-                                <p className="text-[10px] text-slate-500">{item.product_variants.products.name} • {item.product_variants.color}/{item.product_variants.size}</p>
-                              </div>
-                              <div className="text-right">
-                                <p className="text-[10px] text-slate-400 uppercase font-bold">{item.locations.aisle}-{item.locations.rack}{item.locations.level}</p>
-                                <p className="text-sm font-bold text-slate-600">Sistem: {item.quantity}</p>
-                              </div>
-                            </div>
-                          </button>
-                        ))}
-                      </motion.div>
-                    </>
-                  )}
-                </AnimatePresence>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {tickets.length === 0 ? (
+              <div className="col-span-full py-12 text-center text-slate-400">
+                <ClipboardList size={48} className="mx-auto mb-4 opacity-20" />
+                <p>Tidak ada kegiatan opname aktif.</p>
               </div>
             ) : (
-              <div className="flex items-center justify-between p-4 rounded-xl border-2 border-amber-100 bg-amber-50/30">
-                <div className="flex items-center gap-4">
-                  <div className="h-12 w-12 rounded-lg bg-white flex items-center justify-center text-amber-600 shadow-sm">
-                    <Scale size={24} />
-                  </div>
-                  <div>
-                    <p className="font-bold text-slate-900">{selectedInventory.product_variants.sku}</p>
-                    <p className="text-xs text-slate-500">Lokasi: {selectedInventory.locations.aisle}-{selectedInventory.locations.rack}{selectedInventory.locations.level}</p>
-                  </div>
-                </div>
-                <button 
-                  onClick={() => setSelectedInventory(null)}
-                  className="text-xs font-bold text-slate-400 hover:text-rose-500 uppercase tracking-wider"
+              tickets.map(ticket => (
+                <button
+                  key={ticket.id}
+                  onClick={() => startCounting(ticket)}
+                  className="wms-card p-6 text-left hover:border-amber-300 transition-all group"
                 >
-                  Ganti
+                  <div className="flex justify-between items-start mb-4">
+                    <div className="h-10 w-10 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center">
+                      <Fingerprint size={20} />
+                    </div>
+                    <span className="text-[10px] font-bold uppercase text-amber-600 bg-amber-50 px-2 py-1 rounded-full">
+                      {ticket.status}
+                    </span>
+                  </div>
+                  <h4 className="font-bold text-slate-900 mb-1">{ticket.ticket_number}</h4>
+                  <p className="text-xs text-slate-500 mb-4">{ticket.warehouses?.name || 'Gudang'}</p>
+                  <div className="flex items-center justify-between text-[10px] font-bold uppercase text-slate-400">
+                    <span>{new Date(ticket.created_at).toLocaleDateString()}</span>
+                    <ChevronRight size={16} className="group-hover:translate-x-1 transition-transform" />
+                  </div>
                 </button>
-              </div>
+              ))
             )}
           </div>
-
-          {selectedInventory && (
-            <motion.form 
-              onSubmit={handleOpname}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="space-y-6"
-            >
-              <div className="wms-card p-6 space-y-6">
-                <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400">2. Hasil Perhitungan Fisik</h3>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                  <div className="space-y-4">
-                    <div className="p-4 rounded-xl bg-slate-50 border border-slate-100">
-                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Data Sistem Saat Ini</p>
-                      <p className="text-3xl font-bold text-slate-900">{selectedInventory.quantity} <span className="text-sm font-medium text-slate-400">Pcs</span></p>
-                    </div>
-
-                    <div className="space-y-2">
-                       <label className="text-xs font-bold text-slate-600">Jumlah Fisik Sebenarnya</label>
-                       <div className="relative">
-                         <Scale className="absolute left-3 top-1/2 -translate-y-1/2 text-amber-500" size={18} />
-                         <input 
-                           type="number" 
-                           value={physicalQuantity}
-                           onChange={(e) => setPhysicalQuantity(parseInt(e.target.value) || 0)}
-                           className="wms-input pl-10 h-12 text-xl font-bold bg-amber-50/10 border-amber-200"
-                           required
-                         />
-                       </div>
-                    </div>
-                  </div>
-
-                  <div className="space-y-4">
-                    <div className={cn(
-                      "p-4 rounded-xl border flex flex-col items-center justify-center h-full text-center",
-                      physicalQuantity === '' || physicalQuantity === selectedInventory.quantity 
-                        ? "bg-slate-50 border-slate-100 text-slate-400"
-                        : physicalQuantity > selectedInventory.quantity
-                          ? "bg-emerald-50 border-emerald-100 text-emerald-600"
-                          : "bg-rose-50 border-rose-100 text-rose-600"
-                    )}>
-                       <ArrowRightLeft size={32} className="mb-2 opacity-20" />
-                       <p className="text-[10px] font-bold uppercase tracking-widest mb-1">Analisis Selisih</p>
-                       <p className="text-2xl font-bold">
-                          {physicalQuantity === '' ? '-' : physicalQuantity - selectedInventory.quantity}
-                       </p>
-                       <p className="text-[10px] font-medium uppercase mt-1">
-                          {physicalQuantity === '' || physicalQuantity === selectedInventory.quantity 
-                            ? "Sesuai" 
-                            : physicalQuantity > selectedInventory.quantity ? "Stok Lebih" : "Stok Kurang"}
-                       </p>
-                    </div>
-                  </div>
-
-                  <div className="space-y-2 md:col-span-2">
-                    <label className="text-xs font-bold text-slate-600">Alasan Selisih / Catatan</label>
-                    <textarea 
-                      value={note}
-                      onChange={(e) => setNote(e.target.value)}
-                      placeholder="Contoh: Barang cacat ditemukan, kesalahan input sebelumnya..."
-                      className="wms-input min-h-[80px] py-2 resize-none"
-                    />
-                  </div>
-                </div>
+        </>
+      ) : showInitiate ? (
+        <div className="max-w-2xl mx-auto space-y-6">
+           <button 
+            onClick={() => setShowInitiate(false)}
+            className="text-sm font-bold text-slate-400 hover:text-amber-600 flex items-center gap-2"
+          >
+            ← Kembali
+          </button>
+          
+          <div className="wms-card p-6 space-y-8">
+            <div className="flex items-center gap-3">
+              <div className="p-3 rounded-xl bg-amber-50 text-amber-600">
+                <Plus size={24} />
               </div>
+              <div>
+                <h2 className="text-xl font-bold text-slate-900">Inisiasi Stock Opname</h2>
+                <p className="text-xs text-slate-500">Pilih parameter untuk membekukan lokasi dan mulai hitung.</p>
+              </div>
+            </div>
 
-              <button 
+            <form onSubmit={handleInitiate} className="space-y-6">
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-2 md:col-span-2">
+                    <label className="text-xs font-bold text-slate-600">Pilih Gudang</label>
+                    <select 
+                      value={initPayload.warehouseId}
+                      onChange={(e) => setInitPayload({ ...initPayload, warehouseId: e.target.value, aisle: '', rack: '', level: '' })}
+                      className="wms-input h-10 appearance-none bg-white font-semibold"
+                      required
+                    >
+                      <option value="">Pilih Gudang</option>
+                      {warehouses.map(w => <option key={w.id} value={w.id}>{w.name} ({w.code})</option>)}
+                    </select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-slate-600">Lorong (Optional)</label>
+                    <select 
+                      value={initPayload.aisle}
+                      onChange={(e) => setInitPayload({...initPayload, aisle: e.target.value, rack: '', level: ''})}
+                      className="wms-input h-10 appearance-none bg-white"
+                      disabled={!initPayload.warehouseId}
+                    >
+                      <option value="">Semua Lorong</option>
+                      {uniqueAisles.map(a => <option key={a} value={a}>{a}</option>)}
+                    </select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-slate-600">Rak (Optional)</label>
+                    <select 
+                      value={initPayload.rack}
+                      onChange={(e) => setInitPayload({...initPayload, rack: e.target.value, level: ''})}
+                      className="wms-input h-10 appearance-none bg-white"
+                      disabled={!initPayload.aisle}
+                    >
+                      <option value="">Semua Rak</option>
+                      {filteredRacks.map(r => <option key={r} value={r}>{r}</option>)}
+                    </select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-slate-600">Level (Optional)</label>
+                    <select 
+                      value={initPayload.level}
+                      onChange={(e) => setInitPayload({...initPayload, level: e.target.value})}
+                      className="wms-input h-10 appearance-none bg-white"
+                      disabled={!initPayload.rack}
+                    >
+                      <option value="">Semua Level</option>
+                      {filteredLevels.map(l => <option key={l} value={l}>{l}</option>)}
+                    </select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-slate-600">Kategori (Optional)</label>
+                    <select 
+                      value={initPayload.categoryId}
+                      onChange={(e) => setInitPayload({...initPayload, categoryId: e.target.value})}
+                      className="wms-input h-10 appearance-none bg-white"
+                    >
+                      <option value="">Semua Kategori</option>
+                      {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                  </div>
+               </div>
+
+               <div className="p-4 rounded-xl bg-blue-50 border border-blue-100 flex gap-3 text-blue-700">
+                  <AlertCircle size={20} className="shrink-0" />
+                  <p className="text-xs leading-relaxed">
+                    <strong>Catatan:</strong> Lokasi yang dipilih akan <strong>DIBEKUKAN</strong>. Tidak ada transaksi barang masuk atau keluar yang diizinkan selama proses opname berlangsung.
+                  </p>
+               </div>
+
+               <button 
                 type="submit"
                 disabled={isSubmitting}
-                className="w-full wms-btn-primary h-12 bg-amber-600 hover:bg-amber-700 shadow-lg shadow-amber-100"
+                className="w-full wms-btn-primary h-12 bg-amber-600 hover:bg-amber-700"
+               >
+                 {isSubmitting ? 'Memproses...' : 'Mulai Opname & Bekukan Lokasi'}
+               </button>
+            </form>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-6">
+           <div className="flex items-center justify-between">
+              <button 
+                onClick={() => setSelectedTicket(null)}
+                className="text-sm font-bold text-slate-400 hover:text-amber-600 flex items-center gap-2"
               >
-                {isSubmitting ? (
-                  <div className="h-5 w-5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-                ) : (
-                  <>
-                    <RefreshCcw size={18} />
-                    Selesaikan Opname & Update Stok
-                  </>
-                )}
+                ← Kembali ke Daftar Tiket
               </button>
-            </motion.form>
-          )}
-        </div>
+              <div className="text-right">
+                <h3 className="font-bold text-slate-900">{selectedTicket?.ticket_number}</h3>
+                <p className="text-[10px] text-slate-500 uppercase font-bold">{selectedTicket?.warehouses?.name}</p>
+              </div>
+           </div>
 
-        <div className="lg:col-span-2 space-y-6">
-          <div className="wms-card p-6">
-            <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2 mb-4">
-              <History size={16} className="text-slate-400" />
-              Opname Terbaru
-            </h3>
-            <div className="space-y-3">
-              {recentLogs.filter(log => log.transaction_type === 'Opname').length === 0 ? (
-                <div className="text-center py-8 text-slate-400 opacity-50">
-                  <p className="text-[10px] font-bold uppercase tracking-widest">Belum ada opname</p>
+           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {items.map(item => (
+                <div key={item.id} className="wms-card p-5 space-y-4">
+                   <div className="flex justify-between items-start">
+                      <div className="h-8 w-8 rounded-lg bg-slate-50 text-slate-400 flex items-center justify-center">
+                         <Package size={16} />
+                      </div>
+                      <span className="text-[10px] font-bold uppercase text-slate-600 bg-slate-100 px-2 py-1 rounded">
+                         {item.locations.aisle}-{item.locations.rack}{item.locations.level}
+                      </span>
+                   </div>
+                   
+                   <div>
+                      <p className="text-sm font-bold text-slate-900">{item.product_variants.sku}</p>
+                      <p className="text-[10px] text-slate-500 line-clamp-1">{item.product_variants.products.name}</p>
+                   </div>
+
+                   <div className="pt-2 border-t border-slate-50">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">Perhitungan Fisik</label>
+                      <div className="flex gap-2">
+                         <input 
+                           type="number"
+                           value={itemCounts[item.id] ?? ''}
+                           onChange={(e) => setItemCounts({ ...itemCounts, [item.id]: parseInt(e.target.value) || 0 })}
+                           placeholder="0"
+                           className="wms-input h-10 text-center font-bold"
+                         />
+                         <button 
+                           onClick={() => handleSubmitCount(item.id)}
+                           disabled={processingItemId === item.id}
+                           className={cn(
+                             "px-3 rounded-lg transition-all",
+                             item.status === 'counted' || item.status === 'verified'
+                              ? "bg-emerald-50 text-emerald-600"
+                              : "bg-amber-600 text-white shadow-sm"
+                           )}
+                         >
+                            {processingItemId === item.id ? (
+                              <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                            ) : (
+                              item.status === 'counted' || item.status === 'verified' ? <CheckCircle2 size={18} /> : <Plus size={18} />
+                            )}
+                         </button>
+                      </div>
+                   </div>
                 </div>
-              ) : (
-                recentLogs.filter(log => log.transaction_type === 'Opname').map((log) => (
-                  <div key={log.id} className="p-3 rounded-lg border border-slate-100 bg-white">
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <p className="text-xs font-bold text-slate-900">{log.product_variants.sku}</p>
-                        <p className="text-[10px] text-slate-500 mt-1 line-clamp-1">{log.report_note}</p>
-                      </div>
-                      <div className="text-right">
-                        <p className={cn(
-                          "text-xs font-bold",
-                          log.quantity_changed > 0 ? "text-emerald-600" : "text-rose-600"
-                        )}>
-                          {log.quantity_changed > 0 ? '+' : ''}{log.quantity_changed}
-                        </p>
-                        <p className="text-[9px] text-slate-400 mt-1">{new Date(log.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
-                      </div>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-
-          <div className="rounded-2xl p-6 bg-amber-600 text-white relative overflow-hidden">
-             <div className="absolute top-0 right-0 p-4 opacity-10">
-                <RefreshCcw size={100} />
-             </div>
-             <div className="relative z-10">
-                <h4 className="text-lg font-bold mb-1">Akurasi Itu Penting</h4>
-                <p className="text-xs text-amber-100 leading-relaxed">Lakukan Cycle Counting secara rutin untuk menjaga kepercayaan data stok tanpa mengganggu operasional gudang.</p>
-             </div>
-          </div>
+              ))}
+           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

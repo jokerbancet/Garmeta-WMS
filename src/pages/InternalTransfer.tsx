@@ -70,6 +70,7 @@ export default function InternalTransfer() {
   const [quantity, setQuantity] = useState<number>(1);
   const [targetLocation, setTargetLocation] = useState({ aisle: '', rack: '', level: '', warehouseId: '' });
   const [note, setNote] = useState('');
+  const [referenceNumber, setReferenceNumber] = useState('');
   
   // Photo evidence state
   const [beforeFile, setBeforeFile] = useState<File | null>(null);
@@ -199,6 +200,7 @@ export default function InternalTransfer() {
           target_location: item.target_location,
           quantity: item.quantity,
           note: note,
+          reference_number: referenceNumber,
           before_image_url: beforeUrl,
           after_image_url: afterUrl
         });
@@ -210,6 +212,7 @@ export default function InternalTransfer() {
       // Reset everything
       setTransferList([]);
       setNote('');
+      setReferenceNumber('');
       setBeforeFile(null);
       setAfterFile(null);
       setBeforePreview('');
@@ -328,6 +331,16 @@ export default function InternalTransfer() {
                           </div>
                         )}
                      </div>
+                  </div>
+                  <div className="space-y-2 md:col-span-2">
+                    <label className="text-xs font-bold text-slate-600">Nomor Referensi / Surat Internal</label>
+                    <input 
+                      type="text"
+                      value={referenceNumber}
+                      onChange={(e) => setReferenceNumber(e.target.value)}
+                      placeholder="Contoh: IT-2024/001 atau No. Memo"
+                      className="wms-input h-10 bg-white"
+                    />
                   </div>
                   <div className="space-y-2 md:col-span-2">
                     <label className="text-xs font-bold text-slate-600">Catatan Group Transfer</label>

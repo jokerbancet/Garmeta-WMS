@@ -15,7 +15,8 @@ import {
   Warehouse,
   MapPinned,
   Database,
-  History
+  History,
+  Scale
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useSettings } from '@/context/SettingsContext';
@@ -27,6 +28,7 @@ const navItems = [
   { name: 'Manajemen Stok', icon: PackageSearch, path: '/inventory' },
   { name: 'Internal Transfer', icon: Box, path: '/transfer' },
   { name: 'Stock Opname', icon: RefreshCcw, path: '/opname' },
+  { name: 'Rekonsiliasi Data', icon: Scale, path: '/reconciliation' },
   { name: 'Pengeluaran Barang', icon: ArrowUpRight, path: '/outbound' },
   { name: 'Riwayat Stok', icon: History, path: '/history' },
 ];

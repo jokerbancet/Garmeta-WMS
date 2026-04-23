@@ -85,6 +85,16 @@ export async function fetchCatalogWithStock() {
   return data;
 }
 
+export async function fetchCategories() {
+  const { data, error } = await supabase
+    .from('categories')
+    .select('*')
+    .order('name', { ascending: true });
+
+  if (error) throw error;
+  return data;
+}
+
 /**
  * Aggregates variants into a base product view.
  * Useful for the high-level 'Products' table.
@@ -137,6 +147,20 @@ export async function uploadImage(file: File, bucket: 'ledger_documents' | 'ledg
     .getPublicUrl(filePath);
 
   return data.publicUrl;
+}
+
+/**
+ * Helper to check if a location is frozen.
+ */
+async function checkLocationFrozen(locationId: string) {
+  const { data, error } = await supabase
+    .from('locations')
+    .select('is_frozen')
+    .eq('id', locationId)
+    .single();
+  
+  if (error) return false;
+  return data.is_frozen;
 }
 
 /**
@@ -198,7 +222,7 @@ export async function processInbound(payload: {
   // 2. Find or create location
   let { data: location, error: lError } = await supabase
     .from('locations')
-    .select('id')
+    .select('id, is_frozen')
     .match({ 
       warehouse_id: payload.location.warehouseId,
       aisle: payload.location.aisle.toUpperCase(), 
@@ -206,6 +230,10 @@ export async function processInbound(payload: {
       level: payload.location.level.toUpperCase() 
     })
     .single();
+
+  if (location?.is_frozen) {
+    throw new Error('Lokasi sedang dibekukan untuk Stock Opname. Transaksi tidak diizinkan.');
+  }
 
   if (!location) {
     const { data: newLoc, error: nLocError } = await supabase
@@ -380,6 +408,10 @@ export async function processOutbound(payload: {
 
   const targetInv = invItems[0];
 
+  if (await checkLocationFrozen(targetInv.location_id)) {
+    throw new Error('Lokasi sedang dibekukan untuk Stock Opname. Transaksi tidak diizinkan.');
+  }
+
   // 2. Deduct Stock
   const { error: uError } = await supabase
     .from('inventory')
@@ -407,13 +439,14 @@ export async function processInternalTransfer(payload: {
   target_location: { aisle: string; rack: string; level: string; warehouseId: string };
   quantity: number;
   note?: string;
+  reference_number?: string;
   before_image_url?: string;
   after_image_url?: string;
 }) {
   // 1. Find or create target location
   let { data: targetLocation, error: tlError } = await supabase
     .from('locations')
-    .select('id')
+    .select('id, is_frozen')
     .match({
       warehouse_id: payload.target_location.warehouseId,
       aisle: payload.target_location.aisle.toUpperCase(),
@@ -421,6 +454,14 @@ export async function processInternalTransfer(payload: {
       level: payload.target_location.level.toUpperCase()
     })
     .single();
+
+  if (await checkLocationFrozen(payload.source_location_id)) {
+    throw new Error('Lokasi asal sedang dibekukan untuk Stock Opname.');
+  }
+
+  if (targetLocation?.is_frozen) {
+    throw new Error('Lokasi tujuan sedang dibekukan untuk Stock Opname.');
+  }
 
   if (!targetLocation) {
     const { data: newLoc, error: nLocError } = await supabase
@@ -489,6 +530,7 @@ export async function processInternalTransfer(payload: {
     variant_id: payload.variant_id,
     type: 'Transfer',
     quantity: -payload.quantity,
+    reference_number: payload.reference_number,
     report_note: `Pemindahan KELUAR. Dari ${sourceLocStr} ke ${targetLocStr}. ${payload.note || ''}`,
     document_image_url: payload.before_image_url,
     product_image_url: payload.after_image_url
@@ -499,6 +541,7 @@ export async function processInternalTransfer(payload: {
     variant_id: payload.variant_id,
     type: 'Transfer',
     quantity: payload.quantity,
+    reference_number: payload.reference_number,
     report_note: `Pemindahan MASUK. Ke ${targetLocStr} dari ${sourceLocStr}. ${payload.note || ''}`,
     document_image_url: payload.before_image_url,
     product_image_url: payload.after_image_url
@@ -523,6 +566,10 @@ export async function processStockOpname(payload: {
     .single();
 
   if (iError || !inv) throw new Error('Data inventaris tidak ditemukan.');
+
+  if (await checkLocationFrozen(inv.location_id)) {
+    throw new Error('Lokasi sedang dibekukan untuk Stock Opname.');
+  }
 
   const diff = payload.physical_quantity - inv.quantity;
 

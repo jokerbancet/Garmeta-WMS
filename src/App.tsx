@@ -5,6 +5,7 @@ import Inventory from './pages/Inventory';
 import Inbound from './pages/Inbound';
 import InternalTransfer from './pages/InternalTransfer';
 import StockOpname from './pages/StockOpname';
+import StockReconciliation from './pages/StockReconciliation';
 import Outbound from './pages/Outbound';
 import Categories from './pages/Categories';
 import Warehouses from './pages/Warehouses';
@@ -34,6 +35,7 @@ export default function App() {
             <Route path="inventory" element={<Inventory />} />
             <Route path="transfer" element={<InternalTransfer />} />
             <Route path="opname" element={<StockOpname />} />
+            <Route path="reconciliation" element={<StockReconciliation />} />
             <Route path="outbound" element={<Outbound />} />
             <Route path="categories" element={<Categories />} />
             <Route path="warehouses" element={<Warehouses />} />

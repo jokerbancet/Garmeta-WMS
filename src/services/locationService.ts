@@ -7,6 +7,7 @@ export interface LocationRecord {
   aisle: string;
   rack: string;
   level: string;
+  is_frozen: boolean;
   created_at?: string;
   warehouses?: {
     name: string;
@@ -22,6 +23,24 @@ export async function fetchLocations() {
 
   if (error) throw error;
   return data as LocationRecord[];
+}
+
+export async function freezeLocations(locationIds: string[]) {
+  const { error } = await supabase
+    .from('locations')
+    .update({ is_frozen: true })
+    .in('id', locationIds);
+
+  if (error) throw error;
+}
+
+export async function unfreezeLocations(locationIds: string[]) {
+  const { error } = await supabase
+    .from('locations')
+    .update({ is_frozen: false })
+    .in('id', locationIds);
+
+  if (error) throw error;
 }
 
 export async function addLocation(payload: { warehouse_id: string; aisle: string; rack: string; level: string }) {
