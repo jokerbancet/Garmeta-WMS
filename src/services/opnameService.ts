@@ -59,6 +59,9 @@ export async function createOpnameTicket(payload: {
 
   // 1. Identify items to count based on filters FIRST
   // to ensure we don't create an empty ticket
+  const { data: { user } } = await supabase.auth.getUser();
+
+  // We use explicit join mapping (e.g., locations:location_id) for robustness
   let query = supabase
     .from('inventory')
     .select(`
@@ -66,18 +69,29 @@ export async function createOpnameTicket(payload: {
       quantity,
       variant_id,
       location_id,
-      locations!inner(id, warehouse_id, aisle, rack, level),
-      product_variants!inner(id, product_id, products!inner(id, categories_id))
+      locations:location_id!inner(id, warehouse_id, aisle, rack, level),
+      product_variants:variant_id!inner(
+        id, 
+        product_id, 
+        products:product_id!inner(id, categories_id)
+      )
     `)
     .eq('locations.warehouse_id', payload.warehouseId);
 
   if (cleanPayload.aisle) query = query.eq('locations.aisle', cleanPayload.aisle);
   if (cleanPayload.rack) query = query.eq('locations.rack', cleanPayload.rack);
   if (cleanPayload.level) query = query.eq('locations.level', cleanPayload.level);
-  if (cleanPayload.category_id) query = query.eq('product_variants.products.categories_id', cleanPayload.category_id);
+  
+  // Use the nested filter path based on aliased joins
+  if (cleanPayload.category_id) {
+    query = query.eq('product_variants.products.categories_id', cleanPayload.category_id);
+  }
 
   const { data: items, error: iError } = await query;
-  if (iError) throw iError;
+  if (iError) {
+    console.error('Inventory query error:', iError);
+    throw iError;
+  }
 
   if (!items || items.length === 0) {
     throw new Error('Tidak ada barang yang ditemukan untuk kriteria ini. Silakan sesuaikan filter Anda.');
@@ -89,6 +103,7 @@ export async function createOpnameTicket(payload: {
     .insert({
       ticket_number: ticketNumber,
       status: 'initiated',
+      created_by: user?.id,
       ...cleanPayload
     })
     .select()
@@ -141,8 +156,11 @@ export async function fetchOpnameItems(ticketId: string) {
     .from('opname_items')
     .select(`
       *,
-      product_variants(sku, products(name)),
-      locations(aisle, rack, level)
+      product_variants:variant_id(
+        sku, 
+        products:product_id(name)
+      ),
+      locations:location_id(aisle, rack, level)
     `)
     .eq('ticket_id', ticketId);
 

@@ -300,6 +300,13 @@ export default function StockOpname() {
                   </p>
                </div>
 
+               {error && (
+                 <div className="p-4 rounded-xl bg-red-50 text-red-600 flex items-center gap-3 text-xs">
+                   <AlertCircle size={18} className="shrink-0" />
+                   {error}
+                 </div>
+               )}
+
                <button 
                 type="submit"
                 disabled={isSubmitting}
