@@ -6,7 +6,8 @@ import Inbound from './pages/Inbound';
 import InternalTransfer from './pages/InternalTransfer';
 import StockOpname from './pages/StockOpname';
 import StockReconciliation from './pages/StockReconciliation';
-import Outbound from './pages/Outbound';
+import Outbound from './pages/OutboundManagement';
+import MobilePicking from './pages/MobilePicking';
 import Categories from './pages/Categories';
 import Warehouses from './pages/Warehouses';
 import Locations from './pages/Locations';
@@ -29,6 +30,7 @@ export default function App() {
     <SettingsProvider>
       <BrowserRouter>
         <Routes>
+          <Route path="/outbound/picking" element={<MobilePicking />} />
           <Route path="/" element={<DashboardLayout />}>
             <Route index element={<Dashboard />} />
             <Route path="inbound" element={<Inbound />} />

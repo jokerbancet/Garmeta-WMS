@@ -60,6 +60,7 @@ export async function createOpnameTicket(payload: {
   // 1. Identify items to count based on filters FIRST
   // to ensure we don't create an empty ticket
   const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Anda harus login untuk melakukan Stock Opname.');
 
   // We use explicit join mapping (e.g., locations:location_id) for robustness
   let query = supabase

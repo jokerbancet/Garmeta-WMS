@@ -716,26 +716,38 @@ export async function updateVariant(variantId: string, payload: { color?: string
 export async function searchVariants(query: string) {
   if (!query) return [];
   
-  const { data, error } = await supabase
-    .from('product_variants')
-    .select(`
-      id,
-      sku,
-      color,
-      size,
-      products:product_id (
-        name,
-        categories_id,
-        categories (
-          name
+  // To handle cross-table OR search (SKU or Product Name) reliably, 
+  // we perform two queries and merge the results.
+  const [skuRes, nameRes] = await Promise.all([
+    supabase
+      .from('product_variants')
+      .select(`
+        id, sku, color, size, barcode,
+        products:product_id!inner (
+          name, categories_id, categories ( name )
         )
-      )
-    `)
-    .or(`sku.ilike.%${query}%`)
-    .limit(10);
+      `)
+      .or(`sku.ilike.%${query}%,barcode.ilike.%${query}%`)
+      .limit(10),
+    supabase
+      .from('product_variants')
+      .select(`
+        id, sku, color, size, barcode,
+        products:product_id!inner (
+          name, categories_id, categories ( name )
+        )
+      `)
+      .ilike('products.name', `%${query}%`)
+      .limit(10)
+  ]);
 
-  if (error) throw error;
-  return data;
+  if (skuRes.error) throw skuRes.error;
+  
+  // Merge results and remove duplicates by ID
+  const allResults = [...(skuRes.data || []), ...(nameRes.data || [])];
+  const uniqueResults = Array.from(new Map(allResults.map(item => [item.id, item])).values());
+  
+  return uniqueResults.slice(0, 10);
 }
 
 /**
